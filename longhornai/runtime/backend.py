@@ -116,16 +116,24 @@ def dispatch(op_name: str, *args: Any, backend: str | None = None, **kwargs: Any
 
 
 # --- internal default-tracking helpers ---------------------------------------
+#
+# The process-wide default is shared across threads (a backend registered on
+# the import thread must be visible to workers). Only the `use_backend`
+# context-manager override is thread-local, so concurrent threads can target
+# different backends without stepping on each other.
 
-_global = threading.local()
+_default_lock = threading.Lock()
+_default_name: str | None = None
 
 
 def _global_default() -> str | None:
-    return getattr(_global, "name", None)
+    return _default_name
 
 
 def _set_global_default(name: str) -> None:
-    _global.name = name
+    global _default_name
+    with _default_lock:
+        _default_name = name
 
 
 def _active_name() -> str:

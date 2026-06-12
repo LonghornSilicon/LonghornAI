@@ -16,6 +16,13 @@ from .reference import REFERENCES
 from .tolerance import max_rel_error, tolerance_for
 
 
+def _dtype_name(dtype) -> str:
+    """Resolve a dtype label that may be a string (e.g. ``"bfloat16"``)."""
+    if isinstance(dtype, str):
+        return dtype
+    return np.dtype(dtype).name
+
+
 @dataclass
 class DiffResult:
     """Outcome of one differential comparison."""
@@ -44,8 +51,9 @@ def differential_test(
 ) -> DiffResult:
     """Compare ``kernel_fn(*args, **kwargs)`` against the golden for ``op``.
 
-    The golden is looked up from :data:`REFERENCES`. Array args are passed to the
-    reference in float64; the kernel receives them in the requested ``dtype``.
+    The golden is looked up from :data:`REFERENCES`. ``dtype`` may be a NumPy
+    dtype, a type, or a string label (``"bfloat16"`` is the emulated bf16
+    carrier whose tolerance lives in the per-dtype policy).
     """
     if op not in REFERENCES:
         raise KeyError(f"no golden reference registered for op '{op}'")
@@ -59,7 +67,8 @@ def differential_test(
         actual = np.concatenate([np.asarray(a).ravel() for a in actual])
         expected = np.concatenate([np.asarray(e).ravel() for e in expected])
 
-    tol = tolerance_for(np.dtype(dtype).name)
+    name = _dtype_name(dtype)
+    tol = tolerance_for(name)
     rel = max_rel_error(actual, expected)
     passed = bool(
         np.allclose(
@@ -72,7 +81,7 @@ def differential_test(
     )
     return DiffResult(
         op=op,
-        dtype=np.dtype(dtype).name,
+        dtype=name,
         passed=passed,
         max_rel_error=rel,
         rtol=tol.rtol,

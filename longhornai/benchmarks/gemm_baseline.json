@@ -1,0 +1,5 @@
+{
+  "schema": 1,
+  "note": "GEMM shape-suite baseline. Populate with `lhai bench-suite --save-baseline`. CPU NumPy reference baseline; production targets land on silicon (PLAN.md §9.1).",
+  "shapes": []
+}

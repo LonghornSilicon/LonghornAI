@@ -24,6 +24,24 @@ from .backend import (
 
 # Importing the cpu backend registers it as the default target.
 from ..backends import cpu as _cpu  # noqa: F401
+# Pre-silicon shims (M3/M4) — registered after CPU so CPU stays the default.
+from ..backends import sim as _sim  # noqa: F401
+from ..backends import rtl as _rtl  # noqa: F401
+from ..backends import fpga as _fpga  # noqa: F401
+
+from .scheduler import (
+    ContinuousBatchingScheduler,
+    PrefixCache,
+    Request,
+    RequestState,
+    SchedulerConfig,
+    SchedulerStats,
+)
+from .speculative import (
+    SpeculativeDecoder,
+    SpeculativeStats,
+    greedy_target_decode,
+)
 
 __all__ = [
     "Backend",
@@ -33,4 +51,16 @@ __all__ = [
     "set_default_backend",
     "available_backends",
     "use_backend",
+    # M4 scheduler
+    "ContinuousBatchingScheduler",
+    "Request",
+    "RequestState",
+    "SchedulerConfig",
+    "SchedulerStats",
+    # M5 prefix cache
+    "PrefixCache",
+    # M5 speculative decoding
+    "SpeculativeDecoder",
+    "SpeculativeStats",
+    "greedy_target_decode",
 ]

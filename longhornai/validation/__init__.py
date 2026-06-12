@@ -13,7 +13,14 @@ Three pieces, mirroring the plan's validation layers:
 
 from __future__ import annotations
 
+from .bf16 import BF16_DTYPE_NAME, is_bf16_label, to_bf16
 from .differential import DiffResult, differential_test
+from .equivalence import (
+    BackendOutcome,
+    EquivalenceReport,
+    assert_cross_target_equivalent,
+    run_on_backend,
+)
 from .reference import REFERENCES
 from .tolerance import Tolerance, assert_close, tolerance_for
 
@@ -24,4 +31,11 @@ __all__ = [
     "REFERENCES",
     "differential_test",
     "DiffResult",
+    "to_bf16",
+    "is_bf16_label",
+    "BF16_DTYPE_NAME",
+    "assert_cross_target_equivalent",
+    "EquivalenceReport",
+    "BackendOutcome",
+    "run_on_backend",
 ]

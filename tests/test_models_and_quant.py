@@ -38,3 +38,24 @@ def test_autotune_picks_a_config(rng):
     result = autotune(factory, space, warmup=1, trials=2)
     assert result.best_config in ({"order": "ab"}, {"order": "ab2"})
     assert result.best_latency_s > 0
+
+
+def test_gemm_tuning_framework_operational():
+    # PLAN.md §3 Phase 1 exit gate: "tuning framework operational for GEMM".
+    from longhornai.kernels.gemm.tuning import (
+        GEMM_TUNING_SPACE,
+        TUNING_SPACES,
+        autotune_gemm,
+    )
+
+    # Space is non-trivial and registered.
+    assert len(GEMM_TUNING_SPACE.configs()) > 1
+    assert "gemm" in TUNING_SPACES
+
+    # End-to-end: search runs, picks a config from the declared space.
+    result = autotune_gemm(M=64, K=64, N=64, dtype=np.float32, warmup=1, trials=2)
+    assert result.best_config.keys() == GEMM_TUNING_SPACE.params.keys()
+    for k, v in result.best_config.items():
+        assert v in GEMM_TUNING_SPACE.params[k]
+    assert len(result.all_results) == len(GEMM_TUNING_SPACE.configs())
+    assert result.best_latency_s > 0

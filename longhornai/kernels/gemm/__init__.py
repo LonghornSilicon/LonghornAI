@@ -1,4 +1,12 @@
-"""GEMM family kernels: GEMM, batched GEMM, grouped GEMM, tensor contraction."""
+"""GEMM family kernels: GEMM, batched GEMM, grouped GEMM, tensor contraction.
+
+The family is laid out per PLAN.md §2.1:
+
+* :mod:`.reference` — float64 golden references defining numerical semantics
+* :mod:`.impl`      — backend-specialized implementations (CPU today)
+* :mod:`.tuning`    — auto-tuning configuration spaces
+* :file:`KERNEL.md` — input/layout/dtype/perf-target contract
+"""
 
 from __future__ import annotations
 
@@ -6,7 +14,7 @@ from typing import List, Sequence
 
 import numpy as np
 
-from ..runtime import dispatch
+from ...runtime import dispatch
 
 
 def gemm(a: np.ndarray, b: np.ndarray, c=None, alpha: float = 1.0, beta: float = 0.0):
@@ -38,3 +46,6 @@ def grouped_gemm(
 def tensor_contraction(a: np.ndarray, b: np.ndarray, subscripts: str):
     """Generalized einsum-style contraction over the GEMM core."""
     return dispatch("tensor_contraction", a, b, subscripts)
+
+
+__all__ = ["gemm", "batched_gemm", "grouped_gemm", "tensor_contraction"]
