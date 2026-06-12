@@ -1,5 +1,0 @@
-{
-  "schema": 1,
-  "note": "Decode tokens/sec baseline. Populate with `lhai decode-bench --save-baseline`. CPU NumPy reference baseline; production tokens/sec lands on silicon (PLAN.md §9.2).",
-  "results": []
-}
