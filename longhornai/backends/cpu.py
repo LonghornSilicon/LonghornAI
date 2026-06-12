@@ -49,5 +49,9 @@ from ..kernels.attention import impl as _attn_impl  # noqa: F401, E402
 from ..kernels.kv_cache import impl as _kv_impl  # noqa: F401, E402
 from ..kernels.paged_attention import impl as _paged_impl  # noqa: F401, E402
 from ..kernels.quant import impl as _quant_impl  # noqa: F401, E402
+from ..kernels.collectives import impl as _collectives_impl  # noqa: F401, E402
+from ..kernels.moe import impl as _moe_impl  # noqa: F401, E402
+from ..kernels.sparse_attention import impl as _sparse_impl  # noqa: F401, E402
+from ..kernels.fused import impl as _fused_impl  # noqa: F401, E402
 
 register_backend(cpu, default=True)

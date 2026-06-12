@@ -47,20 +47,24 @@ def _flash_streaming(q, k, v, *, scale, causal, block_q, block_kv,
     early once the K block lies strictly past the last Q row's causal limit.
     Numerically a no-op (those blocks contribute -inf scores anyway), but
     cuts work proportionally to seq-length on long causal sequences.
+
+    Q and K share head_dim D; V's head_dim D_v may differ (MLA — DeepSeek).
+    Output shape matches ``(..., S_q, D_v)``.
     """
     out_dt = np.result_type(q, k, v)
     acc = _acc(out_dt)
 
     *lead, S_q, D = q.shape
     S_kv = k.shape[-2]
+    D_v = v.shape[-1]
     if scale is None:
         scale = 1.0 / np.sqrt(D)
 
     leading_size = int(np.prod(lead)) if lead else 1
     Qf = q.astype(acc).reshape(leading_size, S_q, D)
     Kf = k.astype(acc).reshape(leading_size, S_kv, D)
-    Vf = v.astype(acc).reshape(leading_size, S_kv, D)
-    out = np.empty((leading_size, S_q, D), dtype=acc)
+    Vf = v.astype(acc).reshape(leading_size, S_kv, D_v)
+    out = np.empty((leading_size, S_q, D_v), dtype=acc)
 
     for b in range(leading_size):
         Q, K, V = Qf[b], Kf[b], Vf[b]
@@ -69,7 +73,7 @@ def _flash_streaming(q, k, v, *, scale, causal, block_q, block_kv,
             Qi = Q[i0:i1]
             br = i1 - i0
 
-            Oi = np.zeros((br, D), dtype=acc)
+            Oi = np.zeros((br, D_v), dtype=acc)
             mi = np.full(br, -np.inf, dtype=acc)
             li = np.zeros(br, dtype=acc)
 
@@ -101,7 +105,7 @@ def _flash_streaming(q, k, v, *, scale, causal, block_q, block_kv,
             li_safe = np.where(li > 0, li, 1.0)
             out[b, i0:i1] = Oi / li_safe[:, None]
 
-    return out.astype(out_dt).reshape(*lead, S_q, D)
+    return out.astype(out_dt).reshape(*lead, S_q, D_v)
 
 
 @cpu.register("flash_attention_v1")

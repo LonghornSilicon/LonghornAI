@@ -22,6 +22,24 @@ from .equivalence import (
     run_on_backend,
 )
 from .reference import REFERENCES
+from .regression import (
+    RegressionFinding,
+    RegressionReport,
+    run_regression_check,
+)
+from .readiness import (
+    ReadinessCard,
+    ReadinessCriterion,
+    format_readiness_card,
+    run_readiness_card,
+)
+from .silicon_smoke import (
+    SMOKE_FIXTURES,
+    SmokeOutcome,
+    SmokeReport,
+    run_full_cross_target_sweep,
+    run_silicon_smoke,
+)
 from .tolerance import Tolerance, assert_close, tolerance_for
 
 __all__ = [
@@ -38,4 +56,19 @@ __all__ = [
     "EquivalenceReport",
     "BackendOutcome",
     "run_on_backend",
+    # M7 silicon bring-up
+    "SmokeOutcome",
+    "SmokeReport",
+    "SMOKE_FIXTURES",
+    "run_silicon_smoke",
+    "run_full_cross_target_sweep",
+    # M8 regression hardening
+    "RegressionFinding",
+    "RegressionReport",
+    "run_regression_check",
+    # M8 readiness
+    "ReadinessCard",
+    "ReadinessCriterion",
+    "run_readiness_card",
+    "format_readiness_card",
 ]

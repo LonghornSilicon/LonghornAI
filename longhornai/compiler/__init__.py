@@ -9,5 +9,14 @@ backends. This package is the seed crystal for the Longhorn Compiler Stack
 from __future__ import annotations
 
 from .autotune import TuningResult, TuningSpace, autotune
+from .autotune_cache import TuneCache, TuneKey, autotune_cached, shape_signature
 
-__all__ = ["TuningSpace", "TuningResult", "autotune"]
+__all__ = [
+    "TuningSpace",
+    "TuningResult",
+    "autotune",
+    "TuneCache",
+    "TuneKey",
+    "autotune_cached",
+    "shape_signature",
+]

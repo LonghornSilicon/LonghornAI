@@ -24,10 +24,11 @@ from .backend import (
 
 # Importing the cpu backend registers it as the default target.
 from ..backends import cpu as _cpu  # noqa: F401
-# Pre-silicon shims (M3/M4) — registered after CPU so CPU stays the default.
+# Pre-silicon shims (M3/M4/M7) — registered after CPU so CPU stays the default.
 from ..backends import sim as _sim  # noqa: F401
 from ..backends import rtl as _rtl  # noqa: F401
 from ..backends import fpga as _fpga  # noqa: F401
+from ..backends import lhsil as _lhsil  # noqa: F401
 
 from .scheduler import (
     ContinuousBatchingScheduler,
@@ -41,6 +42,32 @@ from .speculative import (
     SpeculativeDecoder,
     SpeculativeStats,
     greedy_target_decode,
+)
+from .tensor_parallel import (
+    TPLayerWeights,
+    TPWeights,
+    llama_forward_tp,
+    shard_column,
+    shard_llama_for_tp,
+    shard_row,
+)
+from .expert_parallel import (
+    EPLayerWeights,
+    EPWeights,
+    mixtral_forward_ep,
+    shard_mixtral_for_ep,
+)
+from .pipeline_parallel import (
+    PPStage,
+    PPWeights,
+    llama_forward_pp,
+    micro_batch_forward_pp,
+    shard_llama_for_pp,
+)
+from .inference import (
+    GenerationResult,
+    LonghornInference,
+    inference_session,
 )
 
 __all__ = [
@@ -63,4 +90,26 @@ __all__ = [
     "SpeculativeDecoder",
     "SpeculativeStats",
     "greedy_target_decode",
+    # M6 tensor parallelism
+    "TPLayerWeights",
+    "TPWeights",
+    "shard_column",
+    "shard_row",
+    "shard_llama_for_tp",
+    "llama_forward_tp",
+    # M6 expert parallelism
+    "EPLayerWeights",
+    "EPWeights",
+    "shard_mixtral_for_ep",
+    "mixtral_forward_ep",
+    # M7 pipeline parallelism
+    "PPStage",
+    "PPWeights",
+    "shard_llama_for_pp",
+    "llama_forward_pp",
+    "micro_batch_forward_pp",
+    # M8 production runtime
+    "GenerationResult",
+    "LonghornInference",
+    "inference_session",
 ]

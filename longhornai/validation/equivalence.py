@@ -87,23 +87,27 @@ def _deep_copy_args(args: tuple, kwargs: dict) -> Tuple[tuple, dict]:
 
 
 def run_on_backend(
-    backend_name: str, op: str, *args: Any, **kwargs: Any,
+    backend_name: str, op_name: str, *args: Any, **kwargs: Any,
 ) -> Any:
-    """Dispatch ``op`` to the named backend with isolated copies of the args."""
+    """Dispatch ``op_name`` to the named backend with isolated copies of the args."""
     cargs, ckwargs = _deep_copy_args(args, kwargs)
     with use_backend(backend_name):
-        return dispatch(op, *cargs, **ckwargs)
+        return dispatch(op_name, *cargs, **ckwargs)
 
 
 def assert_cross_target_equivalent(
-    op: str,
+    op_name: str,
     *args: Any,
     dtype: object = np.float32,
     reference: str = "cpu",
     backends: List[str] | None = None,
     **kwargs: Any,
 ) -> EquivalenceReport:
-    """Run ``op`` under every backend and assert agreement within tolerance.
+    """Run ``op_name`` under every backend and assert agreement within tolerance.
+
+    Note: the parameter is named ``op_name`` rather than ``op`` so callers
+    can pass kernels whose own keyword arguments include ``op`` (e.g.
+    :func:`longhornai.all_reduce(..., op="sum")`) without a name collision.
 
     ``reference`` is the backend whose output every other backend is compared
     against (defaults to CPU — the correctness anchor per PLAN.md §2.2).
@@ -113,35 +117,35 @@ def assert_cross_target_equivalent(
     if reference not in targets:
         targets = [reference] + list(targets)
 
-    ref_out = run_on_backend(reference, op, *args, **kwargs)
+    ref_out = run_on_backend(reference, op_name, *args, **kwargs)
     ref_flat = _to_array(ref_out)
 
     tol = tolerance_for(dtype if isinstance(dtype, str) else np.dtype(dtype).name)
     outcomes: List[BackendOutcome] = [
-        BackendOutcome(backend=reference, op=op, success=True, max_rel_error=0.0)
+        BackendOutcome(backend=reference, op=op_name, success=True, max_rel_error=0.0)
     ]
     for name in targets:
         if name == reference:
             continue
         try:
-            out = run_on_backend(name, op, *args, **kwargs)
+            out = run_on_backend(name, op_name, *args, **kwargs)
             flat = _to_array(out)
             rel = max_rel_error(flat, ref_flat)
             ok = bool(np.allclose(
                 flat, ref_flat, rtol=tol.rtol, atol=tol.atol, equal_nan=True,
             ))
             outcomes.append(BackendOutcome(
-                backend=name, op=op, success=ok, max_rel_error=rel,
+                backend=name, op=op_name, success=ok, max_rel_error=rel,
                 error=None if ok else f"exceeds rtol={tol.rtol}",
             ))
         except Exception as exc:  # pragma: no cover - failure path
             outcomes.append(BackendOutcome(
-                backend=name, op=op, success=False,
+                backend=name, op=op_name, success=False,
                 max_rel_error=float("inf"), error=repr(exc),
             ))
 
     return EquivalenceReport(
-        op=op,
+        op=op_name,
         dtype=dtype if isinstance(dtype, str) else np.dtype(dtype).name,
         reference_backend=reference,
         outcomes=outcomes,

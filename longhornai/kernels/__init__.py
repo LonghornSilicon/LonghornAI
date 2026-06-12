@@ -21,7 +21,9 @@ from .attention import (
     multi_head_attention,
     sdpa,
 )
+from .collectives import all_gather, all_reduce, all_to_all, reduce_scatter
 from .elementwise import embedding_lookup, reduce, rope, softmax
+from .fused import attention_output_proj, gated_mlp, rmsnorm_qkv
 from .gemm import batched_gemm, gemm, grouped_gemm, tensor_contraction
 from .kv_cache import (
     kv_cache_alloc,
@@ -31,6 +33,7 @@ from .kv_cache import (
     kv_cache_gather,
     kv_cache_quantize_append,
 )
+from .moe import moe_combine, moe_dispatch, moe_router, moe_top_k
 from .normalization import layernorm, rmsnorm
 from .paged_attention import paged_attention, paged_kv_alloc, paged_kv_append
 from .quant import (
@@ -38,6 +41,11 @@ from .quant import (
     activation_quantize,
     gemm_w4a16,
     gemm_w8a8,
+)
+from .sparse_attention import (
+    block_sparse_attention,
+    dilated_attention,
+    sliding_window_attention,
 )
 
 __all__ = [
@@ -82,4 +90,22 @@ __all__ = [
     "gemm_w4a16",
     "activation_quantize",
     "activation_dequantize",
+    # collectives (M6)
+    "all_reduce",
+    "all_gather",
+    "reduce_scatter",
+    "all_to_all",
+    # MoE (M6)
+    "moe_router",
+    "moe_top_k",
+    "moe_dispatch",
+    "moe_combine",
+    # sparse attention (M7)
+    "sliding_window_attention",
+    "block_sparse_attention",
+    "dilated_attention",
+    # fused (M7)
+    "rmsnorm_qkv",
+    "attention_output_proj",
+    "gated_mlp",
 ]

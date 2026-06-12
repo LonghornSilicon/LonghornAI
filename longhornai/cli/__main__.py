@@ -161,6 +161,61 @@ def _cmd_decode_bench(args) -> int:
     return 0
 
 
+def _cmd_silicon_smoke(args) -> int:
+    """Run the M7 silicon-bring-up smoke harness."""
+    from ..validation import run_full_cross_target_sweep, run_silicon_smoke
+
+    report = run_silicon_smoke(
+        backend=args.backend, reference=args.reference, seed=args.seed,
+    )
+    print(report.report())
+    rc = 0 if report.passed else 1
+    if args.cross_target:
+        print("\nCross-target equivalence sweep across all registered backends:")
+        sweep = run_full_cross_target_sweep(seed=args.seed)
+        all_pass = True
+        for op, eq in sweep.items():
+            tag = "PASS" if eq.passed else "FAIL"
+            print(f"  [{tag}] {op}")
+            if not eq.passed:
+                all_pass = False
+        if not all_pass:
+            rc = 1
+    return rc
+
+
+def _cmd_full_sweep(args) -> int:
+    """Run the M8 full performance characterization sweep."""
+    from ..benchmarks.full_sweep import (
+        format_full_sweep,
+        run_full_sweep,
+        save_full_sweep_baseline,
+    )
+    rows = run_full_sweep(dtype=np.dtype(args.dtype))
+    print(format_full_sweep(rows))
+    if args.save_baseline:
+        save_full_sweep_baseline(rows)
+        print(f"\nbaseline saved with {len(rows)} row(s).")
+    return 0
+
+
+def _cmd_regression_check(args) -> int:
+    """Run the M8 regression gate across all baselines."""
+    from ..validation import run_regression_check
+    report = run_regression_check(regression_factor=args.regression_factor)
+    print(report.summary())
+    return 0 if report.passed else 1
+
+
+def _cmd_readiness(args) -> int:
+    """Run the M8 production-readiness scorecard."""
+    from ..validation.readiness import format_readiness_card, run_readiness_card
+
+    card = run_readiness_card()
+    print(format_readiness_card(card))
+    return 0 if card.passed else 1
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="lhai", description="LonghornAI kernel toolkit")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -212,6 +267,41 @@ def main(argv=None) -> int:
     p_dec.add_argument("--seed", type=int, default=0)
     p_dec.add_argument("--save-baseline", action="store_true")
     p_dec.set_defaults(func=_cmd_decode_bench)
+
+    p_smoke = sub.add_parser(
+        "silicon-smoke",
+        help="silicon bring-up smoke (PLAN.md §8 M7 exit gate)",
+    )
+    p_smoke.add_argument("--backend", default="lhsil",
+                          help="backend under test (default: lhsil)")
+    p_smoke.add_argument("--reference", default="cpu",
+                          help="reference backend (default: cpu)")
+    p_smoke.add_argument("--seed", type=int, default=0)
+    p_smoke.add_argument("--cross-target", action="store_true",
+                          help="also run the full cross-target equivalence sweep")
+    p_smoke.set_defaults(func=_cmd_silicon_smoke)
+
+    p_full = sub.add_parser(
+        "full-sweep",
+        help="full performance characterization sweep (PLAN.md §8 M8)",
+    )
+    p_full.add_argument("--dtype", default="float32")
+    p_full.add_argument("--save-baseline", action="store_true",
+                         help="overwrite full_sweep_baseline.json")
+    p_full.set_defaults(func=_cmd_full_sweep)
+
+    p_reg = sub.add_parser(
+        "regression-check",
+        help="run every baseline check and gate on regressions (PLAN.md §4.3 / §8 M8)",
+    )
+    p_reg.add_argument("--regression-factor", type=float, default=1.5)
+    p_reg.set_defaults(func=_cmd_regression_check)
+
+    p_ready = sub.add_parser(
+        "readiness",
+        help="production-inference readiness scorecard (PLAN.md §8 M8 exit gate)",
+    )
+    p_ready.set_defaults(func=_cmd_readiness)
 
     args = parser.parse_args(argv)
     return args.func(args)

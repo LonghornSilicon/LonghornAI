@@ -19,11 +19,28 @@ from ..kernels.attention.reference import (
     ref_multi_head_attention,
     ref_sdpa,
 )
+from ..kernels.collectives.reference import (
+    ref_all_gather,
+    ref_all_reduce,
+    ref_all_to_all,
+    ref_reduce_scatter,
+)
+from ..kernels.fused.reference import (
+    ref_attention_output_proj,
+    ref_gated_mlp,
+    ref_rmsnorm_qkv,
+)
 from ..kernels.kv_cache.reference import (
     ref_kv_cache_append,
     ref_kv_cache_dequantize_gather,
     ref_kv_cache_gather,
     ref_kv_cache_quantize_append,
+)
+from ..kernels.moe.reference import (
+    ref_moe_combine,
+    ref_moe_dispatch,
+    ref_moe_router,
+    ref_moe_top_k,
 )
 from ..kernels.paged_attention.reference import (
     ref_paged_attention,
@@ -32,6 +49,11 @@ from ..kernels.paged_attention.reference import (
 from ..kernels.quant.reference import (
     ref_gemm_w4a16,
     ref_gemm_w8a8,
+)
+from ..kernels.sparse_attention.reference import (
+    ref_block_sparse_attention,
+    ref_dilated_attention,
+    ref_sliding_window_attention,
 )
 from ..kernels.elementwise.reference import (
     ref_embedding_lookup,
@@ -73,6 +95,20 @@ REFERENCES: Dict[str, Callable] = {
     "paged_attention": ref_paged_attention,
     "gemm_w8a8": ref_gemm_w8a8,
     "gemm_w4a16": ref_gemm_w4a16,
+    "all_reduce": ref_all_reduce,
+    "all_gather": ref_all_gather,
+    "reduce_scatter": ref_reduce_scatter,
+    "all_to_all": ref_all_to_all,
+    "moe_router": ref_moe_router,
+    "moe_top_k": ref_moe_top_k,
+    "moe_dispatch": ref_moe_dispatch,
+    "moe_combine": ref_moe_combine,
+    "sliding_window_attention": ref_sliding_window_attention,
+    "block_sparse_attention": ref_block_sparse_attention,
+    "dilated_attention": ref_dilated_attention,
+    "rmsnorm_qkv": ref_rmsnorm_qkv,
+    "attention_output_proj": ref_attention_output_proj,
+    "gated_mlp": ref_gated_mlp,
 }
 
 __all__ = [
@@ -102,4 +138,18 @@ __all__ = [
     "ref_paged_attention",
     "ref_gemm_w8a8",
     "ref_gemm_w4a16",
+    "ref_all_reduce",
+    "ref_all_gather",
+    "ref_reduce_scatter",
+    "ref_all_to_all",
+    "ref_moe_router",
+    "ref_moe_top_k",
+    "ref_moe_dispatch",
+    "ref_moe_combine",
+    "ref_sliding_window_attention",
+    "ref_block_sparse_attention",
+    "ref_dilated_attention",
+    "ref_rmsnorm_qkv",
+    "ref_attention_output_proj",
+    "ref_gated_mlp",
 ]

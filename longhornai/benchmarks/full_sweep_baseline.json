@@ -1,0 +1,5 @@
+{
+  "schema": 1,
+  "note": "Full performance characterization baseline (M8). Populate with `lhai full-sweep --save-baseline`. CPU NumPy reference; production targets land on silicon (PLAN.md §9).",
+  "rows": []
+}

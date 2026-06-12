@@ -14,6 +14,17 @@ hyperparameters (Mistral: 4:1 GQA; Qwen: ``rope_theta = 1e6``) so they reuse
 
 from __future__ import annotations
 
+from .deepseek import (
+    DeepSeekConfig,
+    DeepSeekExpertWeights,
+    DeepSeekLayerWeights,
+    DeepSeekWeights,
+    deepseek_decoder_layer,
+    deepseek_forward,
+    deepseek_toy_config,
+    deepseek_v2_config,
+    init_deepseek_weights,
+)
 from .gemma import gemma_2b_config, gemma_toy_config
 from .llama import (
     LlamaConfig,
@@ -35,6 +46,17 @@ from .llama_quantized import (
     quantize_weights_int4,
 )
 from .mistral import mistral_7b_config, mistral_toy_config
+from .mixtral import (
+    MixtralConfig,
+    MixtralExpertWeights,
+    MixtralLayerWeights,
+    MixtralWeights,
+    init_mixtral_weights,
+    mixtral_8x7b_config,
+    mixtral_decoder_layer,
+    mixtral_forward,
+    mixtral_toy_config,
+)
 from .phi import phi3_medium_config, phi3_mini_config, phi_toy_config
 from .qwen import qwen2_5_7b_config, qwen_toy_config
 
@@ -64,4 +86,24 @@ __all__ = [
     "LlamaLayerWeightsQ",
     "quantize_weights_int4",
     "llama_forward_quantized",
+    # M6 — Mixtral (sparse MoE)
+    "MixtralConfig",
+    "MixtralExpertWeights",
+    "MixtralLayerWeights",
+    "MixtralWeights",
+    "init_mixtral_weights",
+    "mixtral_decoder_layer",
+    "mixtral_forward",
+    "mixtral_8x7b_config",
+    "mixtral_toy_config",
+    # M7 — DeepSeek (MLA + fine-grained MoE)
+    "DeepSeekConfig",
+    "DeepSeekExpertWeights",
+    "DeepSeekLayerWeights",
+    "DeepSeekWeights",
+    "init_deepseek_weights",
+    "deepseek_decoder_layer",
+    "deepseek_forward",
+    "deepseek_v2_config",
+    "deepseek_toy_config",
 ]

@@ -33,6 +33,11 @@ from .primitives import (
     scales_per_channel,
     unpack_int4,
 )
+from .sparsity import (
+    gemm_sparse_2to4,
+    prune_2to4,
+    prune_n_m,
+)
 
 __all__ = [
     # primitives
@@ -53,4 +58,8 @@ __all__ = [
     "AWQResult",
     "gptq_calibrate",
     "GPTQResult",
+    # structured sparsity (M7)
+    "prune_n_m",
+    "prune_2to4",
+    "gemm_sparse_2to4",
 ]
