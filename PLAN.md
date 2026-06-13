@@ -1,401 +1,263 @@
-# LonghornAI — Engineering Roadmap & Architecture Plan
+# LonghornAI — Inference Kernel Library Plan
 
-> **Status:** Draft v1.0 · **Owner:** Principal GPU/AI Software Architecture
-> **Audience:** Architecture, Software, Compiler, Performance, and Silicon teams
-> **Review cadence:** Quarterly (aligned to milestone gates)
-> **Repository:** `longhorn-silicon/longhornai`
+This document is the staged roadmap and design rationale for **LonghornAI**, a
+portable, pure **C++17** library of the common AI-inference kernels that appear
+across modern LLM architectures (Llama, Mistral, Qwen, Gemma, Phi, and friends).
+It is written for Longhorn Silicon as the canonical, readable reference
+implementation of every operator an inference stack needs.
+
+Each phase is a self-contained unit of work with explicit deliverables, files,
+the math each kernel computes, and acceptance criteria, so future work can be
+picked up without re-reading anything else.
+
+The **design philosophy** is non-negotiable across every phase: mathematical
+transparency, readable kernels, one operator + one naive reference + one test
+per kernel, and portability over cleverness. Every kernel is plain C++ that
+compiles and runs identically on Windows, Linux, and macOS.
 
 ---
 
 ## Table of Contents
 
 1. [Vision](#1-vision)
-2. [Repository Architecture](#2-repository-architecture)
-3. [Kernel Roadmap](#3-kernel-roadmap)
-4. [Benchmarking Strategy](#4-benchmarking-strategy)
-5. [Validation Infrastructure](#5-validation-infrastructure)
-6. [Performance Engineering](#6-performance-engineering)
-7. [Model Support Matrix](#7-model-support-matrix)
-8. [Milestone Schedule](#8-milestone-schedule)
-9. [Success Metrics](#9-success-metrics)
-10. [Future Vision](#10-future-vision)
+2. [Design Principles](#2-design-principles)
+3. [Repository Layout](#3-repository-layout)
+4. [Build & Portability](#4-build--portability)
+5. [Kernel Roadmap](#5-kernel-roadmap)
+   - [Phase 0 — Scaffold & Build](#phase-0--scaffold--build)
+   - [Phase 1 — Foundational Compute](#phase-1--foundational-compute)
+   - [Phase 2 — Attention](#phase-2--attention)
+6. [Testing & Validation](#6-testing--validation)
+7. [Benchmarking](#7-benchmarking)
+8. [Out of Scope](#8-out-of-scope)
 
 ---
 
 ## 1. Vision
 
-LonghornAI will become the **canonical AI inference kernel library and runtime substrate for all Longhorn Silicon accelerators** — the single source of truth from which every inference workload, benchmark, and silicon validation suite is derived. It plays, for Longhorn, the combined role that CUTLASS, cuBLAS, FlashAttention, TensorRT-LLM, and vLLM collectively play for the NVIDIA ecosystem, but is architected from day one to be **hardware-portable across the full Longhorn execution-target lifecycle**: CPU functional models, RTL co-simulation, FPGA prototypes, silicon bring-up boards, and production accelerators.
+LonghornAI is the single, readable, portable C++ reference for the inference
+kernels that every modern LLM forward pass is built from. It is not a GPU
+library, not a framework, and not a serving stack — it is the **operator set**:
+GEMM, normalization, activations, positional embeddings, softmax, reductions,
+and the attention family, each implemented once, clearly, in standard C++.
 
-### 1.1 Strategic Goals
-
-- **Canonical kernel authority.** Every operator that touches a Longhorn accelerator — from GEMM to Paged Attention to MoE dispatch — has exactly one reference implementation, one numerical golden, and one performance contract that lives in this repository. Downstream products (compiler, serving runtime, model toolkit) consume LonghornAI; they do not fork it.
-- **Hardware/software co-design loop.** LonghornAI is the primary vehicle through which kernel and silicon teams iterate together. Microarchitectural decisions (tensor-core shapes, scratchpad sizing, memory hierarchy, interconnect topology) are validated against *real workloads* in this repo before tapeout commitments.
-- **Bring-up acceleration.** When first silicon arrives, the validation workloads, golden references, and performance baselines required to qualify the part already exist and have been exercised against RTL and FPGA. Silicon bring-up is a *re-targeting* exercise, not a from-scratch build.
-- **Performance leadership.** Longhorn kernels target competitive parity with, and on favorable workloads superiority over, the best-in-class CUDA ecosystem implementations — measured rigorously, not aspirationally.
-- **Portability without abstraction tax.** A backend abstraction layer lets the same operator definitions target multiple ISAs and simulation environments, but the architecture must never force a lowest-common-denominator implementation that sacrifices peak performance on the production target.
-
-### 1.2 Non-Goals (initial phases)
-
-- Training kernels (forward/backward, optimizer states). LonghornAI is **inference-first**; training support is explicitly out of scope through at least the 24-month horizon.
-- A general-purpose tensor framework competing with PyTorch/JAX. We integrate with them; we do not replace them.
-- Graph-level model compilation in Phase 1–3 (this becomes the Longhorn Compiler Stack, seeded later — see §10).
+The library is **inference-first** and **forward-only**. It defines the
+numerical semantics of each operator (via a naive reference) and provides a
+faster, cache-aware production implementation that is proven equivalent to that
+reference. Downstream Longhorn projects — compilers, serving runtimes, silicon
+validation suites — can read these kernels to understand exactly what each
+operator computes, and can use them as the golden behavioural contract.
 
 ---
 
-## 2. Repository Architecture
+## 2. Design Principles
+
+- **Pure C++17, no exceptions to portability.** Kernels use only the C++
+  standard library. No CUDA, no GPU code, no SIMD intrinsics, no third-party
+  compute dependencies. The library builds with MSVC, GCC, and Clang on
+  Windows, Linux, and macOS with zero platform-specific code paths.
+- **One kernel, one reference, one test.** Every operator ships with (1) a
+  dead-simple naive reference that defines correct numerics, (2) a faster
+  cache-aware implementation, and (3) a test that proves they agree within a
+  documented tolerance. No kernel is "done" without all three.
+- **Readability over cleverness.** A reader should be able to see the math.
+  Blocking, accumulation order, and numerical-stability tricks are commented
+  where they matter and nowhere else.
+- **Measure, then optimize.** Optimizations (loop blocking, optional
+  multithreading) are added only after the naive path is correct, and only with
+  a benchmark that shows the win.
+- **FP32 is the source of truth.** FP16/BF16 are supported via a portable
+  software half/bfloat16 helper type; their tolerances are looser and
+  documented.
+
+---
+
+## 3. Repository Layout
 
 ```
-longhornai/
-├── kernels/            # Core compute kernels (the heart of the repo)
-├── runtime/            # Execution runtime, scheduler, memory mgmt, backends
-├── benchmarks/         # Performance benchmarking harness & comparison suites
-├── validation/         # Correctness, numerical, RTL/FPGA/silicon validation
-├── models/             # End-to-end model graphs & support definitions
-├── quantization/       # Quantization algorithms, calibration, packed formats
-├── compiler/           # Kernel codegen, auto-tuning, scheduling primitives
-├── docs/               # Architecture, ABI, kernel authoring guides, ADRs
-├── scripts/            # Build, CI, profiling, target-bringup automation
-└── tests/              # Cross-cutting integration & regression tests
+LonghornAI/
+  CMakeLists.txt            cross-platform build, C++17 only, no CUDA
+  PLAN.md                   this roadmap
+  README.md
+  src/
+    kernels/                one <name>.hpp + <name>.cpp per kernel family
+      dtypes.hpp            portable half / bfloat16 helper types
+      tensor_view.hpp       lightweight non-owning shape/stride view
+      gemm.hpp/.cpp         blocked GEMM (+ batched / grouped)
+      normalization.hpp/.cpp LayerNorm, RMSNorm
+      activation.hpp/.cpp   GELU (erf/tanh), SiLU, SwiGLU, GeGLU
+      softmax.hpp/.cpp      stable row softmax
+      reduction.hpp/.cpp    sum / max / mean primitives
+      rope.hpp/.cpp         rotary position embeddings
+      embedding.hpp/.cpp    embedding gather
+      attention.hpp/.cpp    SDPA, flash-style, MHA/MQA/GQA, KV-cache
+  tests/                    GoogleTest suite, kernel-vs-naive-reference
 ```
 
-### 2.1 Directory Responsibilities
+Each kernel header declares a host-callable function with a stable signature
+operating on raw pointers plus shape metadata (and/or a small `TensorView`).
+The `.cpp` carries both the naive reference (used by tests as the golden) and
+the optimized implementation.
 
-#### `kernels/`
-The core of the repository. Hardware-portable kernel implementations organized by operator family, each with a target-independent reference and one or more target-specialized backends.
+---
 
+## 4. Build & Portability
+
+- **CMake >= 3.20**, `project(LonghornAI LANGUAGES CXX)` — C++ only, no CUDA
+  language enabled.
+- **C++17**, `CMAKE_CXX_STANDARD_REQUIRED ON`, `CMAKE_CXX_EXTENSIONS OFF`.
+- **No platform-specific APIs.** Only the C++ standard library.
+- **GoogleTest via `FetchContent`** so the test suite builds on any OS without
+  a system install.
+- **Per-compiler warning flags**, guarded so each toolchain gets the right
+  ones:
+  - MSVC: `/W3`
+  - GCC / Clang: `-Wall -Wextra`
+- **Optional multithreading** behind `-DLONGHORN_ENABLE_OPENMP=ON`. When off
+  (the default), every kernel runs correctly single-threaded. OpenMP is never
+  required to build or pass tests.
+
+Build is the standard CMake flow on every platform:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure
 ```
-kernels/
-├── gemm/               # GEMM, batched, grouped, tensor contractions
-├── normalization/      # LayerNorm, RMSNorm
-├── activation/         # GELU, SiLU, fused activations
-├── attention/          # SDPA, FlashAttn v1/v2, MHA/MQA/GQA, paged
-├── moe/                # Router, gating, dispatch, expert parallel
-├── elementwise/        # Reductions, softmax, RoPE, embedding lookup
-├── quant/              # Dequant/quant fast paths, packed-format matmul
-├── fused/              # Cross-family fusions (e.g. RMSNorm+QKV proj)
-├── common/             # Tiling, iterators, predication, swizzle utilities
-└── backends/           # Per-target lowering: cpu/, sim/, rtl/, fpga/, lhsil/
-```
-
-Each kernel directory carries: (1) a `reference/` implementation in portable C++/Python that defines numerical semantics, (2) `impl/` backend-specialized versions, (3) `tuning/` config spaces, and (4) a `KERNEL.md` contract specifying inputs, layouts, supported dtypes, and the performance target.
-
-#### `runtime/`
-The thin, low-overhead execution layer that dispatches kernels, manages device memory, sequences operators, and exposes the LonghornAI ABI to host frameworks. Contains the backend dispatch registry, stream/queue abstractions, the KV-cache allocator, paged memory manager, and the continuous-batching scheduler. This is what a serving stack links against.
-
-#### `benchmarks/`
-Reproducible performance measurement. Houses microbenchmarks (single-kernel), operator-suite benchmarks, and end-to-end model benchmarks, plus the comparison harness that runs identical workloads against CUTLASS/cuBLAS/TensorRT-LLM/FlashAttention/Triton/vLLM and emits normalized reports (throughput, latency, % of reference peak, roofline position). All results are versioned and tracked to detect regressions.
-
-#### `validation/`
-Correctness across the entire target lifecycle. Unit and numerical tests, golden-reference generation/storage, differential testing against framework references, and the cross-target equivalence harness that proves CPU-model ≡ RTL ≡ FPGA ≡ silicon within defined tolerances. Contains the silicon bring-up validation playbooks.
-
-#### `models/`
-End-to-end model definitions assembled from LonghornAI kernels (Llama, DeepSeek, Qwen, Gemma, Mistral, Phi, Mixtral). Each model has a graph definition, a weight-loading/conversion path, a config-to-kernel mapping, and an accuracy harness (perplexity, task evals) used to certify that the kernel composition produces correct generation, not just correct individual ops.
-
-#### `quantization/`
-Quantization algorithm implementations (INT8, INT4, AWQ, GPTQ, SmoothQuant, activation quantization), calibration pipelines, packed weight-format definitions, and the dtype/format ABI shared with `kernels/quant/`. Separates the *algorithm* (how to derive quantized weights) from the *kernel* (how to compute on them).
-
-#### `compiler/`
-Kernel-level code generation and tuning infrastructure (not yet whole-graph compilation). Tiling/schedule DSL, the auto-tuning search engine, template instantiation, and target lowering hooks. This is the seed crystal for the future Longhorn Compiler Stack (§10).
-
-#### `docs/`
-Architecture decision records (ADRs), the kernel ABI specification, kernel-authoring guides, the backend porting guide, numerical-tolerance policy, and the performance contract methodology. Documentation is a first-class deliverable, reviewed with code.
-
-#### `scripts/`
-Automation: build orchestration across targets, CI entry points, profiler wrappers, golden regeneration, FPGA bitstream flows, and silicon bring-up board provisioning. Keeps target-specific glue out of source directories.
-
-#### `tests/`
-Cross-cutting integration and regression tests that span multiple directories — full decode loops, scheduler correctness under continuous batching, multi-device communication, and the regression gates that block merges on numerical or performance drift.
-
-### 2.2 Backend Abstraction & Target Lifecycle
-
-A central design principle: kernels are authored against a **target-independent semantic reference** and lowered through `kernels/backends/` to each execution target. The supported targets, in maturity order:
-
-| Target | Path | Purpose | Fidelity |
-|--------|------|---------|----------|
-| CPU functional model | `backends/cpu` | Fast iteration, golden generation, CI default | Bit-exact numerics, no timing |
-| Architectural simulator | `backends/sim` | Performance modeling, occupancy/cycle estimates | Cycle-approximate |
-| RTL co-simulation | `backends/rtl` | Pre-silicon HW/SW validation | Cycle-accurate, slow |
-| FPGA prototype | `backends/fpga` | Pre-silicon at-scale validation | Real timing, reduced clock |
-| Longhorn Silicon | `backends/lhsil` | Production accelerator | Full performance target |
-
-The same operator test runs against every available backend; the cross-target equivalence harness (§5) enforces that they agree.
 
 ---
 
-## 3. Kernel Roadmap
+## 5. Kernel Roadmap
 
-Kernels are sequenced so that each phase unlocks the next: foundational compute enables attention, attention enables decode, decode enables quantization/MoE optimization at the workloads that matter. Every kernel ships with a reference, golden, tuning space, and performance contract before it is considered "done."
+Kernels are sequenced so foundational compute lands first, then attention builds
+on softmax/GEMM/RoPE. Every kernel ships with a naive reference, an optimized
+implementation, and a differential test before it is considered done.
 
-### Phase 1 — Foundational Compute Kernels
+### Phase 0 — Scaffold & Build
 
-The bedrock. Nothing downstream is credible until GEMM and the elementwise/normalization primitives hit their performance contracts.
+Goal: a building, testable skeleton with the shared helpers every kernel needs.
 
-| Kernel | Notes / Acceptance |
-|--------|--------------------|
-| **GEMM** | Core tensor-core path; FP16/BF16/FP8 in, FP32 accum. Tiled, double-buffered, target ≥ cuBLAS-class efficiency on key shapes. |
-| **Batched GEMM** | Uniform-shape batching for MHA projections and small-matrix regimes. |
-| **Grouped GEMM** | Variable-shape grouping — prerequisite for MoE expert matmuls and ragged batches. |
-| **Tensor contractions** | Generalized einsum-style contractions over the GEMM core. |
-| **LayerNorm** | Fused mean/variance, welford-stable; FP32 reduction. |
-| **RMSNorm** | Llama/Qwen/Mistral norm; fuse-ready with subsequent projection. |
-| **Softmax** | Online/streaming-stable; the numerical kernel attention depends on. |
-| **GELU** | tanh and erf variants; exact-match golden to framework. |
-| **SiLU** | SwiGLU activation path for gated MLPs. |
-| **RoPE** | Rotary embeddings; interleaved & half-rotation layouts, NTK/linear scaling. |
-| **Embedding lookup** | Gather with optional scaling; large-vocab friendly. |
-| **Reduction kernels** | Sum/max/mean primitives backing norms and softmax. |
+**Deliverables**
 
-**Exit gate (Phase 1):** GEMM within target % of reference peak on the shape suite; all elementwise/norm kernels bit-compatible with goldens within tolerance; tuning framework operational for GEMM.
+- `CMakeLists.txt` per §4 (CXX-only, GoogleTest via FetchContent, OpenMP option).
+- `src/kernels/dtypes.hpp`: portable `half` and `bfloat16` types with
+  `to_float` / `from_float` conversions (pure integer/bit math, no hardware
+  dependency).
+- `src/kernels/tensor_view.hpp`: lightweight non-owning view (data pointer +
+  shape + strides) and row-major index helpers.
+- `tests/` harness: a tolerance policy (per-dtype absolute/relative bounds), a
+  random-tensor generator with a fixed seed, and an `expect_close` comparator.
 
-### Phase 2 — Attention Kernels
+**Acceptance**
 
-| Kernel | Notes / Acceptance |
-|--------|--------------------|
-| **Scaled Dot-Product Attention** | Reference fused attention; correctness anchor for the flash variants. |
-| **FlashAttention v1** | IO-aware tiled attention, no materialized score matrix; numerical parity with reference. |
-| **FlashAttention v2** | Improved work partitioning & warp scheduling; the prefill performance target. |
-| **Multi-Head Attention** | Full-head path with fused QKV and output projection. |
-| **Multi-Query Attention** | Single KV head; KV-cache footprint reduction. |
-| **Grouped-Query Attention** | Llama-3/Qwen2 GQA; configurable KV-head grouping. |
-| **KV Cache kernels** | Append, gather, layout management; FP16/FP8/INT8 cache dtypes. |
-| **Paged Attention** | Block-table indirection over paged KV; the foundation for high-throughput serving. |
+- `cmake --build` succeeds on Windows/Linux/macOS with MSVC/GCC/Clang.
+- A trivial placeholder test runs green via CTest.
+- Half/bfloat16 round-trip conversions are within their documented tolerance.
 
-**Exit gate (Phase 2):** FlashAttention v2 parity (latency & numerics) with the reference CUDA implementation on the benchmark causal/non-causal suite; Paged Attention correct under fragmented block tables.
+Status: planned.
 
-### Phase 3 — LLM Decode Kernels
+### Phase 1 — Foundational Compute
 
-Where kernels become a serving system.
+Goal: the bedrock dense + elementwise + reduction kernels that an LLM block is
+assembled from.
 
-| Capability | Notes / Acceptance |
-|-----------|--------------------|
-| **Prefill path** | Long-context, compute-bound; FlashAttention v2 + fused projections. |
-| **Decode path** | Single-token, memory-bound; optimized for KV-cache bandwidth and low latency. |
-| **Continuous batching** | Iteration-level scheduling; insert/evict requests without draining the batch. |
-| **Speculative decoding** | Draft-then-verify; target-model batched verification kernels. |
-| **Dynamic batching** | Adaptive batch assembly under latency SLOs. |
-| **Prefix caching** | Shared-prefix KV reuse across requests; block dedup in the paged allocator. |
+| Kernel | Computes | Notes |
+|--------|----------|-------|
+| **GEMM** | `C = alpha * A @ B + beta * C` | Blocked/tiled, cache-friendly, FP32 accumulate; naive triple-loop reference. |
+| **Batched GEMM** | per-batch `C_i = A_i @ B_i` | Uniform-shape batching for projections. |
+| **Grouped GEMM** | variable-shape groups | Ragged batches; foundation for future MoE. |
+| **LayerNorm** | `(x - mean) / sqrt(var + eps) * g + b` | Welford-stable mean/variance, FP32 reduction. |
+| **RMSNorm** | `x / sqrt(mean(x^2) + eps) * g` | Llama/Qwen/Mistral norm. |
+| **Softmax** | `exp(x - max) / sum(exp(x - max))` | Max-subtracted for stability; per-row. |
+| **GELU** | erf and tanh variants | Exact-match goldens to the standard formulas. |
+| **SiLU / SwiGLU / GeGLU** | `x * sigmoid(x)`, gated MLP variants | Gated-MLP activation paths. |
+| **RoPE** | rotary embedding | Interleaved & half-rotation layouts; NTK/linear scaling. |
+| **Embedding lookup** | gather rows by id | Optional scale; large-vocab friendly. |
+| **Reductions** | sum / max / mean | Axis reductions backing norms and softmax. |
 
-**Exit gate (Phase 3):** End-to-end Llama decode loop runs under continuous batching on the architectural simulator/FPGA with correct generation and a published tokens/sec baseline.
+**Files:** `gemm.hpp/.cpp`, `normalization.hpp/.cpp`, `activation.hpp/.cpp`,
+`softmax.hpp/.cpp`, `rope.hpp/.cpp`, `embedding.hpp/.cpp`, `reduction.hpp/.cpp`,
+each with matching tests in `tests/`.
 
-### Phase 4 — Quantization Kernels
+**Acceptance (exit gate)**
 
-| Technique | Notes / Acceptance |
-|-----------|--------------------|
-| **INT8** | W8A8 and W8A16 GEMM paths; per-tensor & per-channel scales. |
-| **INT4** | W4A16 weight-only; packed-format matmul with fused dequant. |
-| **AWQ** | Activation-aware weight quantization; calibration pipeline + kernel. |
-| **GPTQ** | Second-order weight quantization; group-wise scales/zeros. |
-| **SmoothQuant** | Activation-outlier migration enabling W8A8 accuracy. |
-| **Activation quantization** | Dynamic & static activation quant; fused into GEMM epilogues/prologues. |
+- Every Phase-1 kernel matches its naive reference within the per-dtype
+  tolerance on the random + edge-case suites (empty, single-element,
+  non-aligned, large rows).
+- Blocked GEMM beats the naive triple-loop on the shape suite in Release.
+- Softmax and the norms are numerically stable on large-magnitude inputs.
 
-**Exit gate (Phase 4):** INT4 weight-only and INT8 W8A8 paths meet accuracy targets (≤ defined perplexity delta) at a measured speedup over the FP16 baseline.
+Status: planned.
 
-### Phase 5 — Mixture of Experts (MoE)
+### Phase 2 — Attention
 
-| Kernel | Notes / Acceptance |
-|--------|--------------------|
-| **Router kernels** | Gating logits projection + normalization. |
-| **Top-K gating** | Top-1/Top-2/Top-K selection with renormalized weights. |
-| **Expert dispatch** | Permutation/scatter of tokens to experts; ties into Grouped GEMM. |
-| **Expert parallelism** | Sharding experts across devices; all-to-all token exchange. |
-| **Token routing** | Combine/un-permute path; capacity handling & drop policy. |
+Goal: the attention family, built on Phase-1 softmax/GEMM/RoPE.
 
-**Exit gate (Phase 5):** Mixtral and DeepSeek-MoE decode correct end-to-end; expert-parallel all-to-all functional across multiple devices.
+| Kernel | Computes | Notes |
+|--------|----------|-------|
+| **SDPA** | `softmax(Q Kᵀ / sqrt(d) + mask) V` | Reference fused attention; the correctness anchor for the rest. |
+| **FlashAttention-style** | tiled, online-softmax attention | No materialized score matrix; running max/sum rescaling; numerical parity with SDPA. |
+| **MHA / MQA / GQA** | head-config variants | Full multi-head, single-KV-head (MQA), and grouped-KV (GQA) routing. |
+| **KV-cache** | append + gather | Append new K/V; gather over cached positions for decode. |
 
-### Phase 6 — Advanced Features
+Causal and non-causal masking are supported; the flash-style kernel must match
+the SDPA reference to within tolerance on both.
 
-| Feature | Notes / Acceptance |
-|---------|--------------------|
-| **Sparse attention** | Sliding-window, block-sparse, and dilated patterns. |
-| **Structured sparsity** | 2:4 / N:M weight sparsity exploiting HW sparse tensor support. |
-| **Fused kernels** | RMSNorm+QKV, attention+output-proj, MoE router+dispatch fusions. |
-| **Operator fusion** | General epilogue/prologue fusion framework in `kernels/fused/`. |
-| **Multi-GPU communication** | All-reduce, all-gather, reduce-scatter, all-to-all collectives. |
-| **Distributed inference** | Tensor-parallel, pipeline-parallel, and expert-parallel orchestration. |
+**Files:** `attention.hpp/.cpp` plus tests in `tests/`.
 
-**Exit gate (Phase 6):** Tensor-parallel Llama-70B-class and expert-parallel Mixtral-class inference functional across the interconnect with published scaling efficiency.
+**Acceptance (exit gate)**
+
+- Flash-style attention matches the SDPA reference within tolerance on causal
+  and non-causal suites across MHA/MQA/GQA head configs.
+- KV-cache append+gather produces identical results to full recompute over the
+  same sequence.
+
+Status: planned.
 
 ---
 
-## 4. Benchmarking Strategy
+## 6. Testing & Validation
 
-Benchmarking is a **first-class engineering discipline**, not a post-hoc activity. Every kernel has a performance contract, and every merge is gated on regression detection.
-
-### 4.1 Reference Baselines
-
-We benchmark each operator family against the strongest available CUDA-ecosystem implementation, normalized to the same workload, dtype, and problem shape:
-
-| LonghornAI Component | Primary Comparison Targets |
-|----------------------|----------------------------|
-| GEMM / batched / grouped | **CUTLASS**, **cuBLAS** |
-| Attention (prefill/decode) | **FlashAttention v2** |
-| End-to-end LLM serving | **TensorRT-LLM**, **vLLM** |
-| General fused/elementwise | **Triton kernels** |
-
-The comparison harness in `benchmarks/` runs the *identical* logical workload through both stacks, captures hardware counters, and produces a normalized report so that "% of reference" is apples-to-apples.
-
-### 4.2 Metrics
-
-| Metric | Definition & Use |
-|--------|------------------|
-| **Throughput** | Operations or requests per second at saturation. |
-| **Latency** | p50 / p90 / p99 per-operation and per-token latency under load. |
-| **Tokens/sec** | End-to-end generation throughput (per-request and aggregate). |
-| **Memory bandwidth** | Achieved GB/s vs. peak HBM/scratchpad bandwidth (decode is BW-bound). |
-| **FLOPS utilization** | Achieved vs. peak tensor-core FLOPS (prefill/GEMM are compute-bound). |
-| **Roofline efficiency** | Position relative to the roofline ridge; distance from the bound. |
-
-Each kernel's `KERNEL.md` states which metric is its *binding constraint* and the target value. Decode kernels are judged on bandwidth and tokens/sec; GEMM and prefill on FLOPS utilization and roofline efficiency.
-
-### 4.3 Methodology
-
-- **Warm-up + steady-state** measurement; discard cold-start; report distribution not just mean.
-- **Shape suites** drawn from real model configs (head dims, hidden sizes, vocab, seq lengths from the §7 models).
-- **Sweeps** across batch size, sequence length, and context fill to map the operating envelope, not a single point.
-- **Roofline characterization** per kernel to classify compute- vs. memory-bound and validate that optimization effort targets the actual bottleneck.
-- **Regression gating**: every benchmark result is versioned; merges that regress a contract beyond threshold are blocked.
+- **GoogleTest** suite under `tests/`, one test file per kernel family.
+- **Naive reference as golden.** Each kernel is validated against its own
+  simple, obviously-correct reference implementation — never against another
+  optimized kernel.
+- **Per-dtype tolerances.** FP32 tight (relative ~1e-5); FP16/BF16 looser and
+  documented in the test harness; comparisons use combined absolute + relative
+  bounds.
+- **Edge cases.** Empty tensors, single-element rows, non-power-of-two and
+  non-aligned shapes, long sequences/large vocab, and large-magnitude inputs
+  for stability.
+- **Determinism.** Fixed-seed random inputs so failures reproduce exactly.
 
 ---
 
-## 5. Validation Infrastructure
+## 7. Benchmarking
 
-Correctness is enforced across the entire target lifecycle — the same logical test must pass on CPU model, simulator, RTL, FPGA, and silicon.
+Lightweight and optional — correctness first, performance second.
 
-### 5.1 Layers of Validation
+- **Latency / throughput** per kernel over a shape suite drawn from real model
+  configs (hidden sizes, head dims, sequence lengths).
+- **Tiled-vs-naive GEMM speedup** reported as the headline Phase-1 perf number.
+- **Attention parity** (flash-style vs. SDPA) reported for latency and numerics.
 
-- **Unit tests.** Per-kernel functional tests over shape/dtype/layout matrices, including edge cases (empty, single-element, non-aligned, max-context).
-- **Numerical validation.** Tolerance-based comparison (ULP / relative / absolute, per the dtype policy in `docs/`) against high-precision references. FP32 reference, FP16/BF16/FP8 within published bounds.
-- **Golden references.** Versioned, checked-in (or content-addressed) golden outputs generated from the portable reference implementations. Goldens are the contract; kernels are validated against them, not against each other.
-- **Differential testing.** Randomized-input comparison between the LonghornAI kernel and an independent framework reference (PyTorch/JAX/CUDA), with shrinking on failure to a minimal reproducer.
-- **RTL validation.** Kernels executed in RTL co-simulation; bit-exact (or within fixed-point tolerance) agreement with the CPU functional model. Slow but authoritative pre-silicon.
-- **FPGA validation.** At-scale execution on FPGA prototypes — real timing behavior, larger workloads than RTL permits, exercises memory hierarchy and interconnect.
-- **Silicon validation.** Bring-up playbooks that run the validation suite on first silicon: power-on smoke tests → per-kernel correctness → end-to-end model accuracy → performance characterization. The workloads already exist from prior phases, so bring-up is a *re-targeting and qualification* exercise.
-
-### 5.2 Cross-Target Equivalence Harness
-
-The keystone of the strategy: a harness that runs a given operator+input across *all available backends* and asserts agreement within the per-dtype tolerance. This is what lets the silicon team trust that a kernel which passed on RTL will behave correctly on the part — and lets the kernel team catch HW/SW divergence before tapeout.
-
-### 5.3 Accuracy Validation (model level)
-
-Beyond per-kernel correctness, `models/` carries end-to-end accuracy harnesses (perplexity on held-out corpora, downstream task evals) to certify that *kernel composition* produces correct generation — catching errors (e.g., RoPE/scale/layout mismatches) that pass per-op tolerance but corrupt outputs.
+Benchmarks are reproducible (warm-up + steady-state, report distribution not
+just mean) but are not a merge gate in this scope.
 
 ---
 
-## 6. Performance Engineering
+## 8. Out of Scope
 
-Performance is engineered against the roofline, instrumented with hardware counters, and automated where the search space is large.
+To keep the core a focused, portable C++ kernel set, the following are
+explicitly **not** part of this plan and are left as future work:
 
-### 6.1 Techniques
+- CUDA / GPU / accelerator backends.
+- Training, backward passes, and optimizers.
+- Quantization (INT8/INT4, AWQ/GPTQ/SmoothQuant).
+- Mixture-of-Experts (router, dispatch, expert parallelism).
+- Paged attention and serving-level scheduling (continuous/dynamic batching).
+- Multi-GPU / distributed inference and collectives.
+- RTL / FPGA / silicon backends and cross-target equivalence harnesses.
+- Python bindings and end-to-end model graphs.
 
-- **Occupancy analysis.** Model and measure concurrent work in flight per compute unit; balance against register/scratchpad limits to find the latency-hiding sweet spot.
-- **Register pressure analysis.** Track per-thread/per-lane register usage; manage spills; tune tile sizes to the register budget.
-- **Shared-memory / scratchpad tuning.** Size tiles and double-buffers to the on-chip memory; minimize bank conflicts; stage operands for tensor-core feed.
-- **Cache optimization.** Tile for L2/last-level reuse; structure access for temporal/spatial locality; manage residency for weight reuse in decode.
-- **Memory coalescing.** Ensure aligned, contiguous, vectorized accesses; choose layouts (and swizzles) that maximize achieved DRAM bandwidth.
-- **Kernel fusion.** Collapse memory-bound op chains (norm→proj, attn→out-proj, router→dispatch) to cut HBM round-trips — the single highest-leverage decode optimization.
-- **Auto-tuning framework.** A search engine in `compiler/` that explores tile sizes, pipeline depths, swizzles, and schedules per target, caches winning configs per (op, shape, dtype, backend), and feeds the kernel dispatch registry.
-
-### 6.2 Methodology
-
-Every optimization is **roofline-justified**: we first classify the kernel as compute- or memory-bound, then direct effort at the binding constraint and re-measure. Profiling wrappers in `scripts/` standardize counter collection across targets so the simulator, FPGA, and silicon profiles are comparable.
-
----
-
-## 7. Model Support Matrix
-
-Models are certified end-to-end (correctness + accuracy + a published perf baseline) per the milestone schedule. Precision columns indicate the supported/targeted quantization paths.
-
-| Model Family | Architecture Notes | FP16/BF16 | FP8 | INT8 (W8A8) | INT4 (W4A16) | Milestone |
-|--------------|--------------------|:---------:|:---:|:-----------:|:------------:|-----------|
-| **Llama** (2/3) | RMSNorm, RoPE, GQA, SwiGLU | ✅ | ✅ | ✅ | ✅ | M2 (FP16) → M5 (quant) |
-| **Mistral** | Sliding-window attn, GQA | ✅ | ✅ | ✅ | ✅ | M3 → M6 |
-| **Qwen** (2/2.5) | GQA, RoPE scaling, large vocab | ✅ | ✅ | ✅ | ✅ | M3 → M6 |
-| **Gemma** | GeGLU, RMSNorm variants, large vocab | ✅ | ◐ | ✅ | ◐ | M4 |
-| **Phi** | Compact dense decoder | ✅ | ◐ | ✅ | ✅ | M4 |
-| **Mixtral** | Sparse MoE (Top-2), expert parallel | ✅ | ◐ | ◐ | ◐ | M6 (MoE) |
-| **DeepSeek** (V2/MoE) | MLA / fine-grained MoE, expert parallel | ◐ | ◐ | ◐ | ◐ | M7 |
-
-Legend: ✅ planned/supported · ◐ planned, later milestone · blank = out of scope for horizon.
-
-Each certified model entry links to: its graph definition in `models/`, its accuracy report, and its tokens/sec baseline in `benchmarks/`.
-
----
-
-## 8. Milestone Schedule
-
-A realistic 18–24 month roadmap, eight quarterly gates. Each milestone is a **gate**: it must meet its exit criteria (correctness + performance contract) before the next phase's perf work begins. Dates assume the program kicks off at Q3 2026.
-
-| Milestone | Quarter | Theme | Primary Deliverables | Exit Gate |
-|-----------|---------|-------|----------------------|-----------|
-| **M1** | Q3 2026 | Foundation & infra | Repo skeleton, backend abstraction (CPU + sim), GEMM v1, elementwise/norm kernels, golden + diff-test harness, benchmark harness, CI | GEMM within initial % of cuBLAS on shape suite; all Phase-1 kernels pass goldens |
-| **M2** | Q4 2026 | Compute maturity + attention start | Batched/grouped GEMM, tensor contractions, RoPE/embedding, auto-tuning v1; SDPA + FlashAttention v1; **Llama FP16 forward correct (CPU/sim)** | FlashAttn v1 numerical parity; GEMM perf contract met |
-| **M3** | Q1 2027 | Attention performance | FlashAttention v2, MHA/MQA/GQA, KV-cache kernels; **Mistral + Qwen FP16 correct**; RTL backend online | FA v2 parity (latency + numerics); RTL ≡ CPU on attention |
-| **M4** | Q2 2027 | Decode & serving | Paged Attention, prefill/decode split, continuous batching, dynamic batching; Gemma + Phi support; **first FPGA bring-up** | E2E Llama decode under continuous batching on FPGA; tokens/sec baseline published |
-| **M5** | Q3 2027 | Quantization | INT8 W8A8, INT4 W4A16, SmoothQuant; AWQ/GPTQ calibration; prefix caching, speculative decoding | INT4/INT8 accuracy targets met at measured speedup |
-| **M6** | Q4 2027 | MoE & multi-device | Router/Top-K/dispatch, Grouped-GEMM MoE, expert parallelism, collectives; **Mixtral E2E**; tensor parallelism | Mixtral decode correct; TP + expert-parallel functional |
-| **M7** | Q1 2028 | Advanced + DeepSeek | Sparse/structured-sparse attention, full fusion framework, distributed inference; **DeepSeek-MoE support**; **silicon bring-up (first part)** | Silicon smoke + per-kernel correctness pass; cross-target equivalence holds |
-| **M8** | Q2 2028 | Silicon performance & hardening | Silicon performance characterization, auto-tuning on silicon, regression hardening, production runtime packaging | Production inference readiness criteria met (§9) |
-
-> Schedule risk is concentrated at the RTL→FPGA→silicon transitions (M3/M4/M7), which depend on hardware availability. The CPU/sim-first strategy is precisely what de-risks these: software is validated and performance-modeled before hardware exists.
-
----
-
-## 9. Success Metrics
-
-KPIs are measurable, tracked continuously in `benchmarks/`, and reviewed at each gate.
-
-### 9.1 Kernel Performance KPIs
-
-| KPI | Target |
-|-----|--------|
-| **GEMM % of cuBLAS** | ≥ 90% of cuBLAS-class peak on the production shape suite (FP16/BF16); ≥ 85% for FP8/INT8 paths |
-| **FlashAttention parity** | ≥ 95% of FlashAttention v2 prefill throughput; ≤ +5% decode latency vs. reference |
-| **Roofline efficiency** | Compute-bound kernels ≥ 80% of compute roof; memory-bound kernels ≥ 85% of bandwidth roof |
-| **Quantization accuracy** | INT8 W8A8 ≤ 1% perplexity delta vs. FP16; INT4 W4A16 ≤ defined per-model bound — at ≥ measured target speedup |
-
-### 9.2 System / Serving KPIs
-
-| KPI | Target |
-|-----|--------|
-| **Tokens/sec** | Per-model aggregate decode throughput targets met on the production target at defined batch/context points |
-| **Latency SLO** | p99 inter-token latency within serving SLO under continuous batching at target concurrency |
-| **Scaling efficiency** | Tensor-parallel and expert-parallel scaling ≥ defined % efficiency across the interconnect |
-
-### 9.3 Program / Readiness KPIs
-
-| KPI | Target |
-|-----|--------|
-| **Silicon bring-up readiness** | 100% of bring-up validation suite authored and passing on RTL+FPGA *before* first silicon |
-| **Cross-target equivalence** | 100% of certified kernels agree (within tolerance) across CPU/sim/RTL/FPGA/silicon |
-| **Production inference readiness** | All §7 milestone models certified (correctness + accuracy + perf) on silicon; runtime packaged; regression gates green |
-| **Coverage & regression health** | Kernel functional coverage target met; zero open numerical regressions; benchmark regressions auto-gated |
-
----
-
-## 10. Future Vision
-
-LonghornAI is the kernel and runtime substrate. As it matures, four products grow out of it — each consuming LonghornAI rather than forking it.
-
-### 10.1 Longhorn TensorRT Equivalent (Inference Optimizer)
-A graph-level inference optimization engine that ingests a trained model, applies layer/operator fusion, precision selection, and kernel auto-selection from the LonghornAI library, and emits a tuned, serializable inference engine for Longhorn Silicon. The fusion framework (Phase 6) and auto-tuner (`compiler/`) are its seeds.
-
-### 10.2 Longhorn Compiler Stack
-Evolution of `compiler/` from per-kernel codegen into a full graph compiler: a tensor IR, scheduling/tiling passes, automatic operator fusion across the whole graph, and target lowering to every backend in the lifecycle. Closes the loop from model graph → optimized kernels without hand-authoring.
-
-### 10.3 Longhorn Serving Runtime
-Productization of `runtime/` into a standalone, OpenAI-compatible inference server: continuous batching, paged KV management, prefix caching, speculative decoding, multi-device orchestration, and request scheduling under SLOs — the vLLM/TensorRT-LLM-serving analog, built natively on Longhorn kernels.
-
-### 10.4 Longhorn Model Optimization Toolkit
-Productization of `quantization/` plus pruning, distillation hooks, sparsity tooling, and calibration workflows into a user-facing toolkit that takes a model from full precision to a Longhorn-optimized, quantized, sparsified deployment artifact — with accuracy guardrails enforced by the §5 accuracy harnesses.
-
----
-
-### Appendix A — Governance & Engineering Conventions
-
-- **One reference, one golden, one contract per kernel.** No kernel merges without all three.
-- **ADRs in `docs/`** for every cross-cutting architectural decision (ABI changes, layout conventions, tolerance policy).
-- **Roofline-justified optimization.** Performance work must cite the binding constraint it targets.
-- **Cross-target green before silicon.** No kernel is "silicon-ready" until it passes the equivalence harness on all available pre-silicon backends.
-- **Quarterly gates are hard gates.** Phase N+1 performance work does not begin until Phase N exit criteria are met.
-
-*End of PLAN.md — to be reviewed by Architecture, Software, Compiler, Performance, and Silicon leads at the next quarterly gate.*
+*End of PLAN.md — a portable, pure C++ inference kernel library for Longhorn Silicon.*
