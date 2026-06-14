@@ -36,6 +36,8 @@ add_executable(longhorn_tests
     test_quant.cpp
     test_gemm_quant.cpp
     test_moe.cpp
+    test_sampling.cpp
+    test_speculative.cpp
     numerical/test_ulp_sweep.cpp
 )
 

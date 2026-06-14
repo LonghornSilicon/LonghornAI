@@ -34,6 +34,8 @@ add_library(longhorn_kernels STATIC
     src/kernels/quant.cpp
     src/kernels/gemm_quant.cpp
     src/kernels/moe.cpp
+    src/kernels/sampling.cpp
+    src/kernels/speculative.cpp
     src/runtime/cache_manager.cpp
     src/runtime/prefix_cache.cpp
     src/runtime/scheduler.cpp
