@@ -28,6 +28,11 @@ add_executable(longhorn_tests
     test_topk.cpp
     test_transform.cpp
     test_attention_ext.cpp
+    test_paged_attention.cpp
+    test_cache_manager.cpp
+    test_prefix_cache.cpp
+    test_scheduler.cpp
+    test_kvcache_quant.cpp
     numerical/test_ulp_sweep.cpp
 )
 

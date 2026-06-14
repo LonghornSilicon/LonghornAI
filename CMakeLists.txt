@@ -28,6 +28,12 @@ add_library(longhorn_kernels STATIC
     src/kernels/embedding.cpp
     src/kernels/transform.cpp
     src/kernels/attention.cpp
+    src/kernels/kvcache.cpp
+    src/kernels/kvcache_quant.cpp
+    src/kernels/paged_attention.cpp
+    src/runtime/cache_manager.cpp
+    src/runtime/prefix_cache.cpp
+    src/runtime/scheduler.cpp
 )
 
 target_include_directories(longhorn_kernels PUBLIC
