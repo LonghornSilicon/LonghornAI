@@ -31,6 +31,8 @@ add_library(longhorn_kernels STATIC
     src/kernels/kvcache.cpp
     src/kernels/kvcache_quant.cpp
     src/kernels/paged_attention.cpp
+    src/kernels/quant.cpp
+    src/kernels/gemm_quant.cpp
     src/runtime/cache_manager.cpp
     src/runtime/prefix_cache.cpp
     src/runtime/scheduler.cpp

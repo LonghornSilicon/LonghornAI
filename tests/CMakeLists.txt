@@ -33,6 +33,8 @@ add_executable(longhorn_tests
     test_prefix_cache.cpp
     test_scheduler.cpp
     test_kvcache_quant.cpp
+    test_quant.cpp
+    test_gemm_quant.cpp
     numerical/test_ulp_sweep.cpp
 )
 
