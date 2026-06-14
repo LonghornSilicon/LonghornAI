@@ -35,6 +35,14 @@ void sigmoid(const float* x, float* y, int64_t n) {
     for (int64_t i = 0; i < n; ++i) y[i] = sigmoid_scalar(x[i]);
 }
 
+void relu(const float* x, float* y, int64_t n) {
+    for (int64_t i = 0; i < n; ++i) y[i] = (x[i] > 0.0f) ? x[i] : 0.0f;
+}
+
+void tanh_act(const float* x, float* y, int64_t n) {
+    for (int64_t i = 0; i < n; ++i) y[i] = std::tanh(x[i]);
+}
+
 void swiglu(const float* x, float* y, int rows, int dim) {
     for (int r = 0; r < rows; ++r) {
         const float* gate = x + static_cast<int64_t>(r) * 2 * dim;

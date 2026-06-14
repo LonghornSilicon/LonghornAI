@@ -11,18 +11,22 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 option(LONGHORN_BUILD_TESTS "Build the GoogleTest suite" ON)
+option(LONGHORN_BUILD_BENCH "Build the benchmark harness" ON)
 option(LONGHORN_ENABLE_OPENMP "Use OpenMP to parallelize kernels (optional)" OFF)
 
 # --- kernel library ----------------------------------------------------------
 
 add_library(longhorn_kernels STATIC
+    src/core/profiler.cpp
     src/kernels/gemm.cpp
     src/kernels/normalization.cpp
     src/kernels/activation.cpp
     src/kernels/softmax.cpp
     src/kernels/reduction.cpp
     src/kernels/rope.cpp
+    src/kernels/positional.cpp
     src/kernels/embedding.cpp
+    src/kernels/transform.cpp
     src/kernels/attention.cpp
 )
 
@@ -49,6 +53,22 @@ if(LONGHORN_ENABLE_OPENMP)
     else()
         message(WARNING "LONGHORN_ENABLE_OPENMP=ON but OpenMP was not found; "
                         "building the single-threaded path.")
+    endif()
+endif()
+
+# --- benchmark harness -------------------------------------------------------
+
+if(LONGHORN_BUILD_BENCH)
+    add_executable(longhorn_bench bench/bench_main.cpp)
+    target_link_libraries(longhorn_bench PRIVATE longhorn_kernels)
+    target_include_directories(longhorn_bench PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/bench
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    if(MSVC)
+        target_compile_options(longhorn_bench PRIVATE /W3)
+    else()
+        target_compile_options(longhorn_bench PRIVATE -Wall -Wextra)
     endif()
 endif()
 

@@ -21,6 +21,12 @@ void silu(const float* x, float* y, int64_t n);
 // sigmoid: 1 / (1 + e^-x).
 void sigmoid(const float* x, float* y, int64_t n);
 
+// ReLU: max(0, x).
+void relu(const float* x, float* y, int64_t n);
+
+// tanh.
+void tanh_act(const float* x, float* y, int64_t n);
+
 // Gated activations. Input x is [rows, 2*dim]; the first `dim` columns are the
 // gate, the second `dim` the value. Output y is [rows, dim].
 //   SwiGLU: y = silu(gate) * value
