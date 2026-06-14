@@ -36,6 +36,10 @@ add_library(longhorn_kernels STATIC
     src/kernels/moe.cpp
     src/kernels/sampling.cpp
     src/kernels/speculative.cpp
+    src/kernels/ssm.cpp
+    src/kernels/rwkv.cpp
+    src/kernels/linear_attn.cpp
+    src/kernels/conv1d.cpp
     src/runtime/cache_manager.cpp
     src/runtime/prefix_cache.cpp
     src/runtime/scheduler.cpp

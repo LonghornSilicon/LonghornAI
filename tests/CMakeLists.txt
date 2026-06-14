@@ -38,6 +38,9 @@ add_executable(longhorn_tests
     test_moe.cpp
     test_sampling.cpp
     test_speculative.cpp
+    test_ssm.cpp
+    test_rwkv.cpp
+    test_recurrent.cpp
     numerical/test_ulp_sweep.cpp
 )
 
