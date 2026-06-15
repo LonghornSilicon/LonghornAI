@@ -41,11 +41,13 @@ add_executable(longhorn_tests
     test_ssm.cpp
     test_rwkv.cpp
     test_recurrent.cpp
+    ../tools/perf_model/test_perf_model.cpp
     numerical/test_ulp_sweep.cpp
 )
 
 target_link_libraries(longhorn_tests PRIVATE
     longhorn_kernels
+    longhorn_perf_model
     GTest::gtest_main
 )
 

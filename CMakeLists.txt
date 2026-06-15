@@ -12,6 +12,7 @@ endif()
 
 option(LONGHORN_BUILD_TESTS "Build the GoogleTest suite" ON)
 option(LONGHORN_BUILD_BENCH "Build the benchmark harness" ON)
+option(LONGHORN_BUILD_SIM "Build the Phase 9 silicon simulator" ON)
 option(LONGHORN_ENABLE_OPENMP "Use OpenMP to parallelize kernels (optional)" OFF)
 
 # --- kernel library ----------------------------------------------------------
@@ -85,6 +86,26 @@ if(LONGHORN_BUILD_BENCH)
     else()
         target_compile_options(longhorn_bench PRIVATE -Wall -Wextra)
     endif()
+endif()
+
+# --- Phase 9 silicon simulator ----------------------------------------------
+
+if(LONGHORN_BUILD_SIM)
+    add_library(longhorn_perf_model STATIC
+        tools/perf_model/perf_model.cpp
+    )
+    target_include_directories(longhorn_perf_model PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/perf_model
+    )
+    target_compile_features(longhorn_perf_model PUBLIC cxx_std_17)
+    if(MSVC)
+        target_compile_options(longhorn_perf_model PRIVATE /W3)
+    else()
+        target_compile_options(longhorn_perf_model PRIVATE -Wall -Wextra)
+    endif()
+
+    add_executable(silicon_sim tools/perf_model/silicon_sim_main.cpp)
+    target_link_libraries(silicon_sim PRIVATE longhorn_perf_model)
 endif()
 
 # --- tests -------------------------------------------------------------------
