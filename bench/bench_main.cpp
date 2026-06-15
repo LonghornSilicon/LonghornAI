@@ -76,6 +76,9 @@ void register_norm_softmax(lh_bench::BenchSuite& suite) {
     {
         lh_bench::BenchSpec s;
         s.name = "rmsnorm[128x4096]";
+        // ~3 FLOPs/element (square, accumulate, mul-by-gamma) + rsqrt
+        // amortised across the row.
+        s.flops = 3.0 * rows * dim;
         s.bytes = 2.0 * rows * dim * 4.0;
         s.fn = [x, g, y]() mutable {
             lh::rmsnorm(x.data(), g.data(), y.data(), rows, dim);
@@ -85,6 +88,9 @@ void register_norm_softmax(lh_bench::BenchSuite& suite) {
     {
         lh_bench::BenchSpec s;
         s.name = "softmax[128x4096]";
+        // ~5 FLOPs/element (max, sub, exp, sum, div). exp dominates wall
+        // clock; the count is a roofline approximation.
+        s.flops = 5.0 * rows * dim;
         s.bytes = 2.0 * rows * dim * 4.0;
         s.fn = [x, y]() mutable {
             lh::softmax(x.data(), y.data(), rows, dim);
@@ -110,9 +116,18 @@ void register_attention(lh_bench::BenchSuite& suite) {
     auto V = rand_f32(kn, 102);
     std::vector<float> O(static_cast<size_t>(qn), 0.0f);
 
+    // Causal attention does ~half the score+output work of a non-causal
+    // run; we average to half.
+    const double pairs = 0.5 * cfg.batch * cfg.n_q_heads *
+                         static_cast<double>(cfg.seq_q) * cfg.seq_k;
+    const double attn_flops = 4.0 * pairs * cfg.head_dim;
+    const double attn_bytes = 4.0 * (qn + kn + kn + qn);
+
     {
         lh_bench::BenchSpec s;
         s.name = "sdpa/causal[1x8x128x64]";
+        s.flops = attn_flops;
+        s.bytes = attn_bytes;
         s.fn = [Q, K, V, O, cfg]() mutable {
             lh::sdpa(Q.data(), K.data(), V.data(), O.data(), cfg);
         };
@@ -121,6 +136,8 @@ void register_attention(lh_bench::BenchSuite& suite) {
     {
         lh_bench::BenchSpec s;
         s.name = "flash/causal[1x8x128x64]";
+        s.flops = attn_flops;
+        s.bytes = attn_bytes;
         s.fn = [Q, K, V, O, cfg]() mutable {
             lh::flash_attention(Q.data(), K.data(), V.data(), O.data(), cfg, 32);
         };
@@ -138,15 +155,27 @@ int main(int argc, char** argv) {
 
     auto results = suite.run(std::cout);
 
+    std::cout << "\n";
+    lh_bench::print_roofline(std::cout, results);
+
     std::string csv_path;
+    std::string roofline_path;
     for (int i = 1; i + 1 < argc; ++i) {
         if (std::string(argv[i]) == "--csv") csv_path = argv[i + 1];
+        if (std::string(argv[i]) == "--roofline") roofline_path = argv[i + 1];
     }
     if (!csv_path.empty()) {
         if (lh_bench::write_csv(csv_path, results)) {
             std::cout << "wrote " << csv_path << "\n";
         } else {
             std::cerr << "failed to write " << csv_path << "\n";
+        }
+    }
+    if (!roofline_path.empty()) {
+        if (lh_bench::write_roofline_csv(roofline_path, results)) {
+            std::cout << "wrote " << roofline_path << "\n";
+        } else {
+            std::cerr << "failed to write " << roofline_path << "\n";
         }
     }
     return 0;

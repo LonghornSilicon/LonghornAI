@@ -18,6 +18,7 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -42,7 +43,47 @@ struct BenchResult {
     double mean_us = 0.0;
     double gflops = 0.0;
     double gbps = 0.0;
+    double flops = 0.0;     // total per-iter (carried through for roofline)
+    double bytes = 0.0;
 };
+
+// Phase 8 roofline classification. The "ridge point" is the arithmetic
+// intensity at which a balanced machine's compute and memory roofs cross
+// (peak_flops / peak_bw). Kernels above the ridge are compute-bound; below,
+// memory-bound. We treat the band [0.5x, 2x] of the ridge as "balanced" so
+// borderline kernels don't flip-flop with measurement noise.
+struct RooflineClass {
+    enum class Bound { Memory, Balanced, Compute };
+    double ai = 0.0;     // FLOPs / byte
+    Bound bound = Bound::Balanced;
+};
+
+inline const char* bound_str(RooflineClass::Bound b) {
+    switch (b) {
+        case RooflineClass::Bound::Memory: return "memory";
+        case RooflineClass::Bound::Balanced: return "balanced";
+        case RooflineClass::Bound::Compute: return "compute";
+    }
+    return "?";
+}
+
+// Default ridge ~10 FLOPs/byte: representative of a contemporary x86 core
+// with ~50 GFLOPS/lane and ~5 GB/s sustained per-thread DRAM bandwidth.
+// Override for a target machine via the env / CLI.
+inline RooflineClass classify_roofline(double flops, double bytes,
+                                       double ridge = 10.0) {
+    RooflineClass r;
+    if (bytes <= 0.0) {
+        r.ai = std::numeric_limits<double>::infinity();
+        r.bound = RooflineClass::Bound::Compute;
+        return r;
+    }
+    r.ai = flops / bytes;
+    if (r.ai < 0.5 * ridge) r.bound = RooflineClass::Bound::Memory;
+    else if (r.ai > 2.0 * ridge) r.bound = RooflineClass::Bound::Compute;
+    else r.bound = RooflineClass::Bound::Balanced;
+    return r;
+}
 
 inline double percentile(std::vector<double>& v, double q) {
     if (v.empty()) return 0.0;
@@ -80,6 +121,8 @@ inline BenchResult run_one(const BenchSpec& spec) {
     const double secs = r.p50_us * 1.0e-6;
     r.gflops = secs > 0.0 ? (spec.flops / secs) / 1.0e9 : 0.0;
     r.gbps = secs > 0.0 ? (spec.bytes / secs) / 1.0e9 : 0.0;
+    r.flops = spec.flops;
+    r.bytes = spec.bytes;
     return r;
 }
 
@@ -108,6 +151,39 @@ inline bool write_csv(const std::string& path,
           << r.gflops << "," << r.gbps << "\n";
     }
     return true;
+}
+
+// Phase 8 roofline output. Per-kernel arithmetic intensity, achieved
+// throughput, and bound classification. The CSV is the input to the
+// silicon dossier generator and to roofline plots.
+inline bool write_roofline_csv(const std::string& path,
+                               const std::vector<BenchResult>& results,
+                               double ridge = 10.0) {
+    std::ofstream f(path);
+    if (!f.good()) return false;
+    f << "name,ai_flops_per_byte,gflops,gbps,p50_us,bound\n";
+    for (const auto& r : results) {
+        const auto cls = classify_roofline(r.flops, r.bytes, ridge);
+        f << r.name << "," << cls.ai << "," << r.gflops << "," << r.gbps
+          << "," << r.p50_us << "," << bound_str(cls.bound) << "\n";
+    }
+    return true;
+}
+
+inline void print_roofline(std::ostream& os,
+                           const std::vector<BenchResult>& results,
+                           double ridge = 10.0) {
+    os << std::left << std::setw(40) << "kernel" << std::right << std::setw(14)
+       << "AI(F/B)" << std::setw(12) << "GFLOP/s" << std::setw(12) << "GB/s"
+       << std::setw(12) << "bound" << "\n";
+    os << std::string(40 + 14 + 12 * 3, '-') << "\n";
+    for (const auto& r : results) {
+        const auto cls = classify_roofline(r.flops, r.bytes, ridge);
+        os << std::left << std::setw(40) << r.name << std::right
+           << std::fixed << std::setprecision(2) << std::setw(14) << cls.ai
+           << std::setw(12) << r.gflops << std::setw(12) << r.gbps
+           << std::setw(12) << bound_str(cls.bound) << "\n";
+    }
 }
 
 class BenchSuite {
